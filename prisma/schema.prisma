@@ -1,0 +1,73 @@
+// Prisma schema for Blue Ocean Discovery Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id              String   @id @db.Uuid
+  fullName        String?  @map("full_name")
+  experienceLevel String   @default("intermediate") @map("experience_level")
+  techStack       String[] @map("tech_stack")
+  weeklyHours     Int      @default(20) @map("weekly_hours")
+  budget          Float    @default(1000)
+  interests       String[]
+  avoidDomains    String[] @map("avoid_domains")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("profiles")
+}
+
+model Opportunity {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @db.Uuid @map("user_id")
+  title          String
+  niche          String
+  audience       String?
+  blueOceanAngle String?   @map("blue_ocean_angle")
+  difficulty     Int       @default(5)
+  potentialArpu  Float     @default(0) @map("potential_arpu")
+  status         String    @default("new")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  concepts       Concept[]
+
+  @@map("opportunities")
+}
+
+model Concept {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId     String       @db.Uuid @map("opportunity_id")
+  userId            String       @db.Uuid @map("user_id")
+  name              String
+  tagline           String?
+  oneLiner          String?
+  variant           String?
+  leanCanvas        Json         @default("{}") @map("lean_canvas")
+  risks             Json         @default("{}")
+  pricingModel      String?      @map("pricing_model")
+  buildTimeEstimate String?      @map("build_time_estimate")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  opportunity       Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  experiments       Experiment[]
+
+  @@map("concepts")
+}
+
+model Experiment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conceptId String   @db.Uuid @map("concept_id")
+  userId    String   @db.Uuid @map("user_id")
+  name      String
+  type      String
+  status    String   @default("ready")
+  results   Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  concept   Concept  @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@map("experiments")
+}

@@ -1,26 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
+import supabase from '../supabase/supabase';
 
 const { 
   FiSettings, FiCode, FiDatabase, FiServer, FiGlobe, 
   FiDollarSign, FiClock, FiCheckCircle, FiArrowRight, FiDownload,
-  FiTarget, FiTrendingUp
+  FiTarget, FiTrendingUp, FiRefreshCw
 } = FiIcons;
 
 function BuildReadiness({ userProfile }) {
   const [selectedConcept, setSelectedConcept] = useState('');
+  const [concepts, setConcepts] = useState([]);
+  const [loadingConcepts, setLoadingConcepts] = useState(true);
   const [mvpScope, setMvpScope] = useState({
     mustHave: [],
     goodToHave: [],
     experiments: []
   });
 
-  const concepts = [
-    'ComplianceAI Pro - AI compliance monitoring for small law firms',
-    'LegalGuard Lite - Essential compliance toolkit for solo practitioners'
-  ];
+  useEffect(() => {
+    const fetchConcepts = async () => {
+      setLoadingConcepts(true);
+      const { data } = await supabase
+        .from('concepts_1740480000000')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (data) setConcepts(data);
+      setLoadingConcepts(false);
+    };
+    fetchConcepts();
+  }, []);
 
   const techStackOptions = {
     'nextjs': { name: 'Next.js + TypeScript', complexity: 'medium', timeMultiplier: 1.0 },
@@ -125,16 +136,27 @@ function BuildReadiness({ userProfile }) {
       {/* Concept Selection */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Validated Concept</h3>
-        <select 
-          value={selectedConcept}
-          onChange={(e) => setSelectedConcept(e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-          <option value="">Choose a validated concept...</option>
-          {concepts.map((concept, index) => (
-            <option key={index} value={concept}>{concept}</option>
-          ))}
-        </select>
+        {loadingConcepts ? (
+          <div className="flex items-center justify-center py-8">
+            <SafeIcon icon={FiRefreshCw} className="w-6 h-6 animate-spin text-blue-600 mr-2" />
+            <span className="text-sm text-gray-500">Loading concepts...</span>
+          </div>
+        ) : concepts.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-gray-500 text-sm mb-4">No concepts found. Generate some in Concept Forge first.</p>
+          </div>
+        ) : (
+          <select 
+            value={selectedConcept}
+            onChange={(e) => setSelectedConcept(e.target.value)}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Choose a validated concept...</option>
+            {concepts.map((concept) => (
+              <option key={concept.id} value={concept.id}>{concept.name} — {concept.tagline || concept.one_liner}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {selectedConcept && (

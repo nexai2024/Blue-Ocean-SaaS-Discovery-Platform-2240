@@ -1,22 +1,105 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
+import supabase from '../supabase/supabase';
 
 const { 
   FiCheckCircle, FiTarget, FiUsers, FiMessageSquare, 
-  FiGlobe, FiBarChart3, FiArrowRight, FiPlay, FiPlus, FiSettings 
+  FiGlobe, FiBarChart3, FiArrowRight, FiPlay, FiPlus, FiSettings,
+  FiRefreshCw
 } = FiIcons;
 
 function ValidationLab() {
   const navigate = useNavigate();
-  const [signals, setSignals] = useState({ visits: 142, signups: 12, calls: 4, preorders: 1 });
+  const [signals, setSignals] = useState({ visits: 0, signups: 0, calls: 0, preorders: 0 });
   const [activeTab, setActiveTab] = useState('signals');
+  const [experiments, setExperiments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [signalId, setSignalId] = useState(null);
 
-  const updateSignal = (key, val) => setSignals(prev => ({ ...prev, [key]: Math.max(0, prev[key] + val) }));
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-  const conversionRate = ((signals.signups / signals.visits) * 100).toFixed(1);
+      // Load validation signals
+      const { data: sigData } = await supabase
+        .from('validation_signals_1740480000000')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (sigData) {
+        setSignals({
+          visits: sigData.visits || 0,
+          signups: sigData.signups || 0,
+          calls: sigData.calls || 0,
+          preorders: sigData.preorders || 0
+        });
+        setSignalId(sigData.id);
+      }
+
+      // Load experiments
+      const { data: expData } = await supabase
+        .from('experiments_1740480000000')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (expData?.length) {
+        setExperiments(expData);
+      }
+
+      setLoading(false);
+    };
+    loadData();
+  }, []);
+
+  const updateSignal = async (key, val) => {
+    const newSignals = { ...signals, [key]: Math.max(0, signals[key] + val) };
+    setSignals(newSignals);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const payload = {
+      user_id: user.id,
+      visits: newSignals.visits,
+      signups: newSignals.signups,
+      calls: newSignals.calls,
+      preorders: newSignals.preorders,
+      updated_at: new Date()
+    };
+
+    if (signalId) {
+      await supabase
+        .from('validation_signals_1740480000000')
+        .update(payload)
+        .eq('id', signalId);
+    } else {
+      const { data } = await supabase
+        .from('validation_signals_1740480000000')
+        .insert(payload)
+        .select()
+        .single();
+      if (data) setSignalId(data.id);
+    }
+  };
+
+  const conversionRate = signals.visits > 0
+    ? ((signals.signups / signals.visits) * 100).toFixed(1)
+    : '0.0';
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto flex items-center justify-center py-32">
+        <SafeIcon icon={FiRefreshCw} className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-7xl mx-auto space-y-8 pb-12">
@@ -86,20 +169,20 @@ function ValidationLab() {
                   <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden p-1 shadow-inner">
                     <motion.div 
                       initial={{ width: 0 }} 
-                      animate={{ width: `${Math.min(conversionRate * 5, 100)}%` }}
+                      animate={{ width: `${Math.min(parseFloat(conversionRate) * 5, 100)}%` }}
                       className={`h-full rounded-full shadow-lg ${parseFloat(conversionRate) > 5 ? 'bg-gradient-to-r from-green-400 to-green-600' : 'bg-yellow-500'}`} 
                     />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between text-xs font-black uppercase tracking-widest mb-4">
-                    <span className="text-slate-500">Signup to Call ({((signals.calls / signals.signups) * 100 || 0).toFixed(1)}%)</span>
+                    <span className="text-slate-500">Signup to Call ({signals.signups > 0 ? ((signals.calls / signals.signups) * 100).toFixed(1) : '0.0'}%)</span>
                     <span className="text-purple-600">Target: &gt;10%</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden p-1 shadow-inner">
                     <motion.div 
                       initial={{ width: 0 }} 
-                      animate={{ width: `${(signals.calls / signals.signups) * 100 || 0}%` }}
+                      animate={{ width: `${signals.signups > 0 ? (signals.calls / signals.signups) * 100 : 0}%` }}
                       className="h-full rounded-full bg-gradient-to-r from-purple-400 to-purple-600 shadow-lg" 
                     />
                   </div>
@@ -114,13 +197,32 @@ function ValidationLab() {
               <h3 className="text-xl font-black mb-6 flex items-center">
                 <SafeIcon icon={FiPlay} className="mr-3 text-green-400" /> AI Verdict
               </h3>
-              <div className="flex items-center space-x-3 mb-8">
-                <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.6)]" />
-                <span className="text-green-400 font-black uppercase text-[10px] tracking-[0.3em]">Extreme Validation</span>
-              </div>
-              <p className="text-slate-400 text-sm leading-relaxed mb-10 font-medium">
-                "Data suggests product-market fit is highly probable. Stop running ads and start building the MVP immediately. Your CAC/LTV ratio looks elite."
-              </p>
+              {signals.visits > 0 ? (
+                <>
+                  <div className="flex items-center space-x-3 mb-8">
+                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(34,197,94,0.6)]" />
+                    <span className="text-green-400 font-black uppercase text-[10px] tracking-[0.3em]">Live Data</span>
+                  </div>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-10 font-medium">
+                    &ldquo;{signals.signups} signups from {signals.visits} visits ({conversionRate}% conversion).
+                    {parseFloat(conversionRate) > 5
+                      ? ' Strong signal — accelerate to MVP build.'
+                      : parseFloat(conversionRate) > 2
+                        ? ' Moderate interest — try refining your landing page.'
+                        : ' Low conversion — revisit your value proposition before building.'}&rdquo;
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center space-x-3 mb-8">
+                    <div className="w-2.5 h-2.5 bg-slate-500 rounded-full" />
+                    <span className="text-slate-400 font-black uppercase text-[10px] tracking-[0.3em]">Awaiting Data</span>
+                  </div>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-10 font-medium">
+                    &ldquo;Start tracking validation signals using the counters above. Once you have real data, the AI will evaluate your product-market fit.&rdquo;
+                  </p>
+                </>
+              )}
               <button 
                 onClick={() => navigate('/build-readiness')}
                 className="w-full py-4 bg-green-600 hover:bg-green-500 text-white rounded-2xl font-black transition-all shadow-xl shadow-green-900/20 flex items-center justify-center"
@@ -145,37 +247,69 @@ function ValidationLab() {
 
       {activeTab === 'experiments' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[
-            { name: 'Problem Interviews', status: 'In Progress', progress: 60, icon: FiMessageSquare, color: 'blue' },
-            { name: 'Landing Page v2', status: 'Completed', progress: 100, icon: FiGlobe, color: 'green' },
-            { name: 'Concierge Proof', status: 'Ready', progress: 0, icon: FiTarget, color: 'slate' }
-          ].map((exp, i) => (
-            <motion.div 
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-white p-8 rounded-[2rem] border border-slate-200 hover:shadow-xl transition-all group"
-            >
-              <div className="flex justify-between items-start mb-8">
-                <div className={`p-4 bg-${exp.color}-50 rounded-2xl text-${exp.color}-600`}>
-                  <SafeIcon icon={exp.icon} className="w-6 h-6" />
+          {experiments.length > 0 ? (
+            experiments.map((exp, i) => (
+              <motion.div 
+                key={exp.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="bg-white p-8 rounded-[2rem] border border-slate-200 hover:shadow-xl transition-all group"
+              >
+                <div className="flex justify-between items-start mb-8">
+                  <div className="p-4 bg-blue-50 rounded-2xl text-blue-600">
+                    <SafeIcon icon={FiMessageSquare} className="w-6 h-6" />
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                    exp.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {exp.status}
+                  </span>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                  exp.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                }`}>
-                  {exp.status}
-                </span>
-              </div>
-              <h4 className="text-xl font-black text-slate-900 mb-4">{exp.name}</h4>
-              <div className="w-full bg-slate-100 rounded-full h-2 mb-8 p-0.5">
-                <div className="bg-blue-600 h-full rounded-full" style={{ width: `${exp.progress}%` }} />
-              </div>
-              <button className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl font-black text-xs hover:bg-slate-100 transition-all uppercase tracking-widest">
-                Explore Protocol
-              </button>
-            </motion.div>
-          ))}
+                <h4 className="text-xl font-black text-slate-900 mb-4">{exp.name}</h4>
+                <div className="w-full bg-slate-100 rounded-full h-2 mb-8 p-0.5">
+                  <div className="bg-blue-600 h-full rounded-full" style={{ width: '0%' }} />
+                </div>
+                <button className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl font-black text-xs hover:bg-slate-100 transition-all uppercase tracking-widest">
+                  Explore Protocol
+                </button>
+              </motion.div>
+            ))
+          ) : (
+            <>
+              {[
+                { name: 'Problem Interviews', status: 'In Progress', icon: FiMessageSquare },
+                { name: 'Landing Page v2', status: 'Completed', icon: FiGlobe },
+                { name: 'Concierge Proof', status: 'Ready', icon: FiTarget }
+              ].map((exp, i) => (
+                <motion.div 
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="bg-white p-8 rounded-[2rem] border border-slate-200 hover:shadow-xl transition-all group"
+                >
+                  <div className="flex justify-between items-start mb-8">
+                    <div className="p-4 bg-blue-50 rounded-2xl text-blue-600">
+                      <SafeIcon icon={exp.icon} className="w-6 h-6" />
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                      exp.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {exp.status}
+                    </span>
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mb-4">{exp.name}</h4>
+                  <div className="w-full bg-slate-100 rounded-full h-2 mb-8 p-0.5">
+                    <div className="bg-blue-600 h-full rounded-full" style={{ width: exp.status === 'Completed' ? '100%' : exp.status === 'In Progress' ? '60%' : '0%' }} />
+                  </div>
+                  <button className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl font-black text-xs hover:bg-slate-100 transition-all uppercase tracking-widest">
+                    Explore Protocol
+                  </button>
+                </motion.div>
+              ))}
+            </>
+          )}
           <div className="bg-slate-50 p-8 rounded-[2rem] border-2 border-dashed border-slate-200 flex flex-center flex-col items-center justify-center text-center cursor-pointer hover:bg-white transition-all">
             <div className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
               <SafeIcon icon={FiPlus} className="w-6 h-6 text-slate-400" />

@@ -3,21 +3,23 @@ import { motion } from 'framer-motion';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
 import supabase from '../supabase/supabase';
+import { aiService } from '../services/aiService';
 
-const { FiLightbulb, FiTarget, FiDollarSign, FiRefreshCw, FiArrowRight, FiZap } = FiIcons;
+const { FiLightbulb, FiTarget, FiDollarSign, FiRefreshCw, FiArrowRight, FiZap, FiAlertCircle } = FiIcons;
 
 function ConceptForge({ userProfile }) {
   const [selectedOpportunity, setSelectedOpportunity] = useState('');
   const [opportunities, setOpportunities] = useState([]);
   const [concepts, setConcepts] = useState([]);
   const [generatingState, setGeneratingState] = useState('idle');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
-      const { data: opps } = await supabase.from('opportunities_1740480000000').select('*');
+      const { data: opps } = await supabase.from('opportunities_1740480000000').select('*').order('created_at', { ascending: false });
       if (opps) setOpportunities(opps);
       
-      const { data: concs } = await supabase.from('concepts_1740480000000').select('*');
+      const { data: concs } = await supabase.from('concepts_1740480000000').select('*').order('created_at', { ascending: false });
       if (concs) setConcepts(concs);
     };
     loadData();
@@ -26,28 +28,38 @@ function ConceptForge({ userProfile }) {
   const handleGenerate = async () => {
     if (!selectedOpportunity) return;
     setGeneratingState('generating');
-    
-    setTimeout(async () => {
-      const opp = opportunities.find(o => o.id === selectedOpportunity);
-      const newConcept = {
-        opportunity_id: selectedOpportunity,
-        name: `${opp.niche}Guard Pro`,
-        tagline: 'Blue Ocean Protection for Your Business',
-        one_liner: `Automated ${opp.niche} monitoring for small teams.`,
-        lean_canvas: { solution: ['AI Monitoring', 'Global Dashboard'] },
-        risks: { market: 'low' },
-        pricing_model: '$99/mo',
-        build_time_estimate: '8 weeks'
-      };
+    setError(null);
 
-      const { data, error } = await supabase
+    try {
+      const opp = opportunities.find(o => o.id === selectedOpportunity);
+      const result = await aiService.forgeConcepts(opp);
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const formattedConcepts = result.concepts.map(concept => ({
+        opportunity_id: selectedOpportunity,
+        user_id: user?.id,
+        name: concept.name,
+        tagline: concept.tagline || '',
+        one_liner: concept.one_liner || '',
+        lean_canvas: concept.lean_canvas || {},
+        risks: concept.risks || {},
+        pricing_model: concept.pricing_model || '',
+        build_time_estimate: concept.build_time_estimate || ''
+      }));
+
+      const { data, error: dbError } = await supabase
         .from('concepts_1740480000000')
-        .insert([newConcept])
+        .insert(formattedConcepts)
         .select();
 
-      if (data) setConcepts(prev => [data[0], ...prev]);
+      if (dbError) throw dbError;
+      if (data) setConcepts(prev => [...data, ...prev]);
       setGeneratingState('complete');
-    }, 2000);
+    } catch (err) {
+      setError(err.message);
+      setGeneratingState('idle');
+    }
   };
 
   return (
@@ -66,13 +78,20 @@ function ConceptForge({ userProfile }) {
           <option value="">Choose an opportunity...</option>
           {opportunities.map(opp => <option key={opp.id} value={opp.id}>{opp.title}</option>)}
         </select>
+
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 p-4 rounded-xl text-red-700 text-sm font-bold flex items-center">
+            <SafeIcon icon={FiAlertCircle} className="mr-2" /> {error}
+          </div>
+        )}
+
         <button 
           onClick={handleGenerate} 
           disabled={!selectedOpportunity || generatingState === 'generating'}
           className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center disabled:opacity-50"
         >
           <SafeIcon icon={FiRefreshCw} className={`mr-2 ${generatingState === 'generating' ? 'animate-spin' : ''}`} />
-          {generatingState === 'generating' ? 'Forging...' : 'Generate Concepts'}
+          {generatingState === 'generating' ? 'AI Forging Concepts...' : 'Generate Concepts'}
         </button>
       </div>
 
@@ -85,6 +104,16 @@ function ConceptForge({ userProfile }) {
               <span>{concept.pricing_model}</span>
               <span>{concept.build_time_estimate}</span>
             </div>
+            {concept.lean_canvas?.solution && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(Array.isArray(concept.lean_canvas.solution) ? concept.lean_canvas.solution : []).map((s, si) => (
+                  <span key={si} className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-full">{s}</span>
+                ))}
+              </div>
+            )}
+            {concept.tagline && (
+              <p className="text-xs text-gray-400 mt-2 italic">{concept.tagline}</p>
+            )}
           </motion.div>
         ))}
       </div>

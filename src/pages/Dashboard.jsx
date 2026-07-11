@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import * as FiIcons from 'react-icons/fi';
 import SafeIcon from '../common/SafeIcon';
+import supabase from '../supabase/supabase';
 
 const { 
   FiRadar, FiTrendingUp, FiTarget, FiActivity, 
@@ -11,12 +12,29 @@ const {
 
 function Dashboard({ userProfile }) {
   const navigate = useNavigate();
+  const [counts, setCounts] = useState({ opps: 0, concepts: 0, experiments: 0 });
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const [oppRes, conceptRes, expRes] = await Promise.all([
+        supabase.from('opportunities_1740480000000').select('id', { count: 'exact', head: true }),
+        supabase.from('concepts_1740480000000').select('id', { count: 'exact', head: true }),
+        supabase.from('experiments_1740480000000').select('id', { count: 'exact', head: true })
+      ]);
+      setCounts({
+        opps: oppRes.count || 0,
+        concepts: conceptRes.count || 0,
+        experiments: expRes.count || 0
+      });
+    };
+    fetchCounts();
+  }, []);
 
   const stats = [
-    { label: 'Active Opportunities', value: '12', icon: FiRadar, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Validated Concepts', value: '3', icon: FiCheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+    { label: 'Opportunities Found', value: String(counts.opps), icon: FiRadar, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Concepts Forged', value: String(counts.concepts), icon: FiCheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
     { label: 'Market Pressure', value: 'Low', icon: FiActivity, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { label: 'Dev Ready', value: '1', icon: FiSettings, color: 'text-orange-600', bg: 'bg-orange-50' }
+    { label: 'Experiments', value: String(counts.experiments), icon: FiSettings, color: 'text-orange-600', bg: 'bg-orange-50' }
   ];
 
   return (
